@@ -1,0 +1,36 @@
+# Dependencies: systemctl (duh)
+
+[[actions]]
+show_binds = true
+preview_cmd = "systemctl status {1}"
+input_cmd = """
+systemctl list-units --type=service --all --no-legend --plain \
+"""
+extra_fzf_args = ["--no-mouse"]
+
+    [[actions.binds]]
+    description = "Start service"
+    key = "ctrl-space"
+    event = "execute(sudo systemctl start {1})"
+    [[actions.binds]]
+    description = "Stop service"
+    key = "ctrl-s"
+    event = "execute(sudo systemctl stop {1})"
+    [[actions.binds]]
+    description = "Restart service"
+    key = "ctrl-r"
+    event = "execute(sudo systemctl restart {1})"
+    [[actions.binds]]
+    description = "Edit service"
+    key = "ctrl-e"
+    event = "execute(sudo systemctl edit {1})"
+    [[actions.binds]]
+    description = "Show dependencies"
+    key = "ctrl-d"
+    event = """
+    execute(\
+        sudo systemctl list-dependencies {1} --plain | \
+        tail -n +2 | \
+        awk '{$1=$1;print}'\
+    )\
+    """

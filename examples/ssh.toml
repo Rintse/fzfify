@@ -1,0 +1,33 @@
+# Dependencies: ssh, vipe, ripgrep
+# This one assumes a lot about your ssh config
+
+[[actions]]
+input_cmd = 'grep -r "Host " ~/.ssh | grep -v "*" | cut -d " " -f 2'
+preview = """
+shopt -s nullglob; \
+sed -n '/^Host {1}\\($\\| \\)/,/^Host \\|^$/p' \
+    ~/.ssh/config \
+    ~/.ssh/config.d/* \
+    | sed '$d'
+"""
+show_binds = true
+
+    [[actions.binds]]
+    description = "Output host to stdout"
+    key = "ctrl-p"
+    event = "accept"
+
+    [[actions.binds]]
+    description = "SSH into host"
+    key = "enter"
+    event = "become(ssh {1})"
+
+    [[actions.binds]]
+    description = "Edit SSH host config"
+    key = "ctrl-e"
+    event = "execute(rg -l 'Host {1}' ~/.ssh | xargs \"$EDITOR\" '+/Host {r1}')"
+
+    [[actions.binds]]
+    description = "SSH into host after editing ssh command"
+    key = "ctrl-space"
+    event = "become(bash <(echo 'ssh {1}' | vipe | tee /dev/tty) )"

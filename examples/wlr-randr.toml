@@ -1,0 +1,52 @@
+# Dependencies: wlr-randr (duh), jq
+
+[[actions]]
+input_cmd = "wlr-randr --json | jq -r '.[].name'"
+preview = """\
+wlr-randr --json | \
+jq 'first(.[] | select(.name == "{}"))' | \
+jq '.modes |= map("\\(.width)x\\(.height)@\\(.refresh)Hz")' \
+"""
+show_binds = true
+    [[actions.binds]]
+    description = "Toggle on/off"
+    key = "ctrl-space"
+    event = """\
+    execute-silent(wlr-randr --output {} --toggle)+\
+    refresh-preview\
+    """
+    [[actions.binds]]
+    description = "Set mode"
+    key = "ctrl-m"
+    event = "execute({{0}} setmode {})"
+    [[actions.binds]]
+    description = "Set position"
+    key = "ctrl-p"
+    event = "execute({{0}} position {})"
+    [[actions.binds]]
+    description = "Rotate up"
+    key = "ctrl-k"
+    event = "execute-silent(wlr-randr --output {} --transform normal)"
+    [[actions.binds]]
+    description = "Rotate down"
+    key = "ctrl-j"
+    event = "execute-silent(wlr-randr --output {} --transform 180)"
+    [[actions.binds]]
+    description = "Rotate left"
+    key = "ctrl-l"
+    event = "execute-silent(wlr-randr --output {} --transform 90)"
+    [[actions.binds]]
+    description = "Rotate right"
+    key = "ctrl-h"
+    event = "execute-silent(wlr-randr --output {} --transform 270)"
+
+[[actions]]
+match_args = ['setmode', '\w+']
+input_cmd = """
+wlr-randr --json | \
+jq -r 'first(.[] | select(.name == "{{2}}")) | .modes.[]' | \
+jq -r '"\\(.width)x\\(.height)@\\(.refresh)Hz"'
+"""
+    [[actions.binds]]
+    key = "enter"
+    event = "become(wlr-randr --output {{2}} --mode {})"
