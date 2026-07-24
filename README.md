@@ -1,7 +1,7 @@
 # fzfify
 
 Turns a toml containing a description of fzf arguments into an fzf-based TUI,
-if you're masochistic enough to figure out the toml string syntax. Mean mostly
+if you're masochistic enough to figure out the toml string syntax. Meant mostly
 as a cure for those noun-verb CLIs where you end up copying lots of output into
 new commands.
 
