@@ -44,6 +44,12 @@ where actions have the following fields:
   binding, showing the key and description fields.
 - **`extra_fzf_args`**: Passed to fzf as-is with if the action is matched.
 
+Because the descriptor is a toml that you can easily generate programmatically,
+`fzfify` purposely leaves out lots of QOL features to stay simple. If you are
+tearing your hair out writing the toml, just write a program that does so. Now
+you are writing a program that writes the the config for a program that calls
+fzf. Surely this is normal behaviour.
+
 ## Argument templating
 
 All of:
