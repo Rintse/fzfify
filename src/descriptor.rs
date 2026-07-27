@@ -3,7 +3,7 @@ use anyhow::{Context, anyhow};
 use log::debug;
 use regex::Regex;
 use serde::Deserialize;
-use std::process::Stdio;
+use std::{collections::HashMap, process::Stdio};
 
 /// An fzf binding that also has a description to explain the binding
 #[derive(Debug, Deserialize, Clone)]
@@ -37,6 +37,8 @@ pub struct Action {
 #[derive(Deserialize)]
 pub struct Descriptor {
     pub actions: Vec<Action>,
+    #[serde(default)]
+    pub variables: HashMap<String, String>,
 }
 
 impl Action {

@@ -39,7 +39,7 @@ show_binds = true
     key = "ctrl-d"
     event = """\
     execute-silent(pactl set-default-sink {1})\
-    +become({{0}})\
+    +become({{}})\
     """
     [[actions.binds]]
     description = "Show full details"
@@ -96,7 +96,7 @@ show_binds = true
     key = "ctrl-d"
     event = """\
     execute-silent(pactl set-default-source {1})\
-    +become({{0}} sources)\
+    +become({{}})\
     """
     [[actions.binds]]
     description = "Show full details"
