@@ -48,7 +48,9 @@ pub fn arg_replace(
 /// Launches input command and returns a handle to its stdout
 pub fn input_stdout(cmd: &str) -> anyhow::Result<std::process::ChildStdout> {
     debug!("Launching input cmd: {cmd}");
-    let mut cmd = std::process::Command::new("sh")
+    let shell =
+        std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
+    let mut cmd = std::process::Command::new(shell)
         .arg("-c")
         .arg(cmd)
         .stdout(Stdio::piped())
