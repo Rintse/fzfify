@@ -1,4 +1,4 @@
-use crate::util::{arg_replace, get_call_args, input_stdout};
+use crate::util::{get_call_args, input_stdout};
 use anyhow::{Context, anyhow};
 use log::debug;
 use regex::Regex;
@@ -41,26 +41,129 @@ pub struct Descriptor {
     pub variables: HashMap<String, String>,
 }
 
+pub enum SubKey<'a> {
+    /// The string `{{}}` is replaced by the evocation of fzfify
+    All,
+    /// The string `{{n}}` is replaced by the `n`-th match argument
+    MatchArg(usize),
+    /// The string `{{key}}` is replaced by the value in the top-level
+    /// `variables` section of the descriptor
+    Var(&'a str),
+}
+
+pub struct Substitutor<'a> {
+    this: &'a str,
+    args: &'a [String],
+    vars: &'a HashMap<String, String>,
+    all_arg_re: Regex,
+    match_arg_re: Regex,
+    var_re: Regex,
+}
+
+impl<'a> Substitutor<'a> {
+    fn new(
+        this: &'a str,
+        args: &'a [String],
+        vars: &'a HashMap<String, String>,
+    ) -> Self {
+        let all_arg_re = Regex::new(r"\{\{\}\}").unwrap();
+        let match_arg_re = Regex::new(r"\{\{(\d+)\}\}").unwrap();
+        let var_re = Regex::new(r"\{\{([a-zA-Z]\w*)\}\}").unwrap();
+        Self { this, args, vars, all_arg_re, match_arg_re, var_re }
+    }
+
+    fn get_replacement(&self, key: &SubKey<'_>) -> anyhow::Result<String> {
+        match key {
+            SubKey::All => {
+                Ok(std::env::args().collect::<Vec<String>>().join(" "))
+            }
+            SubKey::MatchArg(idx) => {
+                if *idx == 0 {
+                    Ok(self.this.to_string())
+                } else {
+                    self.args
+                        .get(idx - 1)
+                        .cloned()
+                        .context(format!("Invalid match argument index: {idx}"))
+                }
+            }
+            SubKey::Var(name) => self
+                .vars
+                .get(*name)
+                .cloned()
+                .context(format!("Undefined variable: {name}")),
+        }
+    }
+
+    /// Finds all substrings to be substituted and performs the matching sub
+    fn do_sub(&self, s: &str) -> anyhow::Result<String> {
+        // Dont care about the cost of repeated cloning here
+        let mut replaced = s.to_string();
+        // TODO: lots of duplication below?
+
+        while let Some(caps) = self.all_arg_re.captures(&replaced) {
+            let m = caps.get(0).unwrap();
+            let replacement = self.get_replacement(&SubKey::All)?;
+            debug!(
+                "Substituting evocation: {} <- {}",
+                &replaced[m.start()..m.end()],
+                &replacement
+            );
+            replaced.replace_range(m.start()..m.end(), &replacement);
+        }
+
+        while let Some(caps) = self.match_arg_re.captures(&replaced) {
+            let m = caps.get(0).unwrap();
+            let replacement = {
+                let idx = caps[1].parse().expect("Regex allows only ints");
+                self.get_replacement(&SubKey::MatchArg(idx))?
+            };
+            debug!(
+                "Substituting match argument: {} <- {}",
+                &replaced[m.start()..m.end()],
+                &replacement
+            );
+            replaced.replace_range(m.start()..m.end(), &replacement);
+        }
+
+        while let Some(caps) = self.var_re.captures(&replaced) {
+            let m = caps.get(0).unwrap();
+            let replacement = self.get_replacement(&SubKey::Var(&caps[1]))?;
+            debug!(
+                "Substituting variable: {} <- {}",
+                &replaced[m.start()..m.end()],
+                &replacement
+            );
+            replaced.replace_range(m.start()..m.end(), &replacement);
+        }
+
+        Ok(replaced)
+    }
+}
+
 impl Action {
     /// Substitues in all the runtime information for this action
-    pub fn with_args(&self, args: &[String]) -> anyhow::Result<Self> {
+    pub fn with_args_vars(
+        &self,
+        args: &[String],
+        vars: &HashMap<String, String>,
+    ) -> anyhow::Result<Self> {
         let this = get_call_args(args);
+        let subber = Substitutor::new(&this, args, vars);
 
         let match_args = self.match_args.clone();
-        let input_cmd = arg_replace(&this, args, &self.input_cmd)
-            .context("Error in input command")?;
+        let input_cmd =
+            subber.do_sub(&self.input_cmd).context("Error in input command")?;
         let show_binds = self.show_binds;
 
-        let preview =
-            self.preview.clone().map(|p| arg_replace(&this, args, &p));
+        let preview = self.preview.clone().map(|p| subber.do_sub(&p));
         let preview = preview.transpose().context("Error in preview")?;
 
         let header_lines = self
             .header_lines
             .iter()
             .map(|l| {
-                arg_replace(&this, args, l)
-                    .context(format!("Error in header: `{l}`"))
+                subber.do_sub(l).context(format!("Error in header: `{l}`"))
             })
             .collect::<Result<_, _>>()?;
 
@@ -68,7 +171,8 @@ impl Action {
             .extra_fzf_args
             .iter()
             .map(|l| {
-                arg_replace(&this, args, l)
+                subber
+                    .do_sub(l)
                     .context(format!("Error in extra_fzf_args: `{l}`"))
             })
             .collect::<Result<_, _>>()?;
@@ -78,11 +182,12 @@ impl Action {
             .iter()
             .map(|Bind { key, event, description }| {
                 let key = key.clone();
-                let event = arg_replace(&this, args, event)
+                let event = subber
+                    .do_sub(event)
                     .context(format!("Error in bind event for `{key}`"))?;
                 let description = description
                     .as_ref()
-                    .map(|d| arg_replace(&this, args, d))
+                    .map(|d| subber.do_sub(d))
                     .transpose()
                     .context(format!("Error in description for `{key}`"))?;
                 Ok(Bind { key, event, description })
@@ -163,7 +268,7 @@ impl Descriptor {
 
         match action {
             Some(action) => {
-                let action = action.with_args(args)?;
+                let action = action.with_args_vars(args, &self.variables)?;
                 action.run()
             }
             None => Err(anyhow!("No actions match provided args {args:?}")),

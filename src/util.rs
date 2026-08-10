@@ -2,7 +2,6 @@ use std::process::Stdio;
 
 use anyhow::Context;
 use log::debug;
-use regex::Regex;
 
 /// Reconstructs the invocation of this program, excluding `script_args`
 pub fn get_call_args(script_args: &[String]) -> String {
@@ -17,37 +16,6 @@ pub fn get_call_args(script_args: &[String]) -> String {
     }
 
     args.join(" ")
-}
-
-/// Finds `{{k}}` in `line` and replaces it with the k-th `SCRIPT_ARG`, with the
-/// 0-th argument being the program itself, from `get_call_args()` and no `k` 
-/// resolving the whole evocation of the program
-pub fn arg_replace(
-    this: &str,
-    args: &[String],
-    line: &str,
-) -> anyhow::Result<String> {
-    let match_arg_re = Regex::new(r"\{\{(\d*)\}\}").unwrap();
-    let mut replaced = line.to_string();
-
-    while let Some(caps) = match_arg_re.captures(&replaced) {
-        let m = caps.get(0).unwrap();
-        let replacement = if caps[1].is_empty() {
-            &std::env::args().collect::<Vec<String>>().join(" ")
-        } else {
-            let idx = caps[1].parse().context("Invalid match argument")?;
-            match idx {
-                0 => &this.to_string(),
-                n => args
-                    .get(n - 1)
-                    .context(format!("Invalid match argument index: {idx}"))?,
-            }
-        };
-        // Dont care about the cost of repeated cloning here
-        replaced.replace_range(m.start()..m.end(), replacement);
-    }
-
-    Ok(replaced)
 }
 
 /// Launches input command and returns a handle to its stdout
