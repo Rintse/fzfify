@@ -34,7 +34,7 @@ pub struct Action {
     pub extra_fzf_args: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct Descriptor {
     pub actions: Vec<Action>,
     #[serde(default)]
