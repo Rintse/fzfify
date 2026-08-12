@@ -8,7 +8,7 @@ use anyhow::Context;
 use clap::Parser;
 use log::LevelFilter;
 use rhai::{Dynamic, Engine, Scope};
-use std::{collections::HashMap, fs, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
@@ -18,7 +18,7 @@ struct CliArgs {
     verbose: bool,
     /// The rhai script specifying fzf behaviour
     script: PathBuf,
-    /// The arguments passed as `match_args` in the toml descriptor
+    /// The arguments passed as `ARGS` to the script
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     script_args: Vec<String>,
 }
@@ -47,19 +47,18 @@ fn run_script(script: &str, script_args: &[String]) -> anyhow::Result<Action> {
         .eval_with_scope(&mut scope, script)
         .context("Error evaluating script")?;
 
-    let action: Action = rhai::serde::from_dynamic(&result)
-        .context("Script did not return action")?;
-
-    Ok(action)
+    rhai::serde::from_dynamic(&result)
+        .context("Could not get result from script")
 }
 
 fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
     env_logger::Builder::new().filter_level(args.get_level()).init();
 
+    // At this point couldn't we just run anything that outputs json?
     let script = fs::read_to_string(&args.script)?;
     let action = run_script(&script, &args.script_args)?;
-    let action = action.with_args_vars(&args.script_args, &HashMap::new())?;
+    let action = action.with_args(&args.script_args)?;
 
     action.run()
 }

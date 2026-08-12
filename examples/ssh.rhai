@@ -1,18 +1,14 @@
-fn SSH_DIR() {
-    env("HOME") + "/.ssh"
-}
+const SSH_DIR = env("HOME") + "/.ssh";
+const PAHTPICKER = "vifm --choose-dir -";
 
 fn show_hosts() {
-    const SSH_DIR = SSH_DIR();
-
     let input_cmd = `grep -r "Host " ~/.ssh | grep -v "*" | cut -d " " -f 2`;
-
     let preview = `
     shopt -s nullglob; \
-    sed -n '/^Host {1}\\($\\| \\)/,/^Host \\|^$/p' \
-        ${SSH_DIR}/config \
-        ${SSH_DIR}/config.d/* \
-        | sed '$d' \
+    sed -n '/^Host {1}\($\| \)/,/^Host \|^$/p' \
+        ${global::SSH_DIR}/config \
+        ${global::SSH_DIR}/config.d/* \
+        | sed '$d'
     `;
 
     let ssh_cmd = "become(ssh {1})";
@@ -58,10 +54,10 @@ fn show_hosts() {
     }
 }
 
-fn scp() {
+fn scp(host) {
     let scp_cmd = `become(
-        save_path=$(vifm --choose-dir -);
-        scp -r "{{2}}":{} "$save_path/$(basename {})"
+        save_path=$(${global::PAHTPICKER});
+        scp -r "${host}":{} "$save_path/$(basename {})"
     )`;
 
     let binds = [
@@ -73,8 +69,8 @@ fn scp() {
     ];
 
     #{
-        input_cmd: `ssh {{2}} "find -type f"`,
-        preview: `ssh {{2}} "stat {}"`,
+        input_cmd: `ssh ${host} "find -type f" 2>/dev/null`,
+        preview: `ssh ${host} "stat {}"`,
         show_binds: true,
         binds: binds,
     }
@@ -85,8 +81,7 @@ if ARGS.len() == 0 {
 }
 else {
     switch ARGS[0] {
-        "cp" => scp(),
-        _ => print("Invalid arguments")
+        "cp" => scp(ARGS[1]),
+        _ => throw "Invalid arguments: " + ARGS,
     }
 }
-

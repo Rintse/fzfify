@@ -3,7 +3,7 @@ use anyhow::Context;
 use log::debug;
 use regex::Regex;
 use serde::Deserialize;
-use std::{collections::HashMap, process::Stdio};
+use std::process::Stdio;
 
 /// An fzf binding that also has a description to explain the binding
 #[derive(Debug, Deserialize, Clone)]
@@ -13,12 +13,9 @@ pub struct Bind {
     pub description: Option<String>,
 }
 
-/// Specifies a the behaviour for an fzf view given `match_args` are provided
+/// Specifies a the behaviour for an fzf view
 #[derive(Debug, Deserialize, Clone)]
 pub struct Action {
-    /// The arguments to match for this action (regex)
-    #[serde(default)]
-    pub match_args: Vec<String>,
     /// The command to run as input to the fzf window
     pub input_cmd: String,
     /// Shows the keybinds for which a description is set if true
@@ -34,99 +31,57 @@ pub struct Action {
     pub extra_fzf_args: Vec<String>,
 }
 
-pub enum SubKey<'a> {
-    /// The string `{{}}` is replaced by the evocation of fzfify
-    All,
-    /// The string `{{n}}` is replaced by the `n`-th match argument
-    MatchArg(usize),
-    /// The string `{{key}}` is replaced by the value in the top-level
-    /// `variables` section of the descriptor
-    Var(&'a str),
-}
-
 pub struct Substitutor<'a> {
     this: &'a str,
     args: &'a [String],
-    vars: &'a HashMap<String, String>,
-    all_arg_re: Regex,
-    match_arg_re: Regex,
-    var_re: Regex,
+    script_arg_re: Regex,
 }
 
 impl<'a> Substitutor<'a> {
-    fn new(
-        this: &'a str,
-        args: &'a [String],
-        vars: &'a HashMap<String, String>,
-    ) -> Self {
-        let all_arg_re = Regex::new(r"\{\{\}\}").unwrap();
-        let match_arg_re = Regex::new(r"\{\{(\d+)\}\}").unwrap();
-        let var_re = Regex::new(r"\{\{([a-zA-Z]\w*)\}\}").unwrap();
-        Self { this, args, vars, all_arg_re, match_arg_re, var_re }
+    fn new(this: &'a str, args: &'a [String]) -> Self {
+        let script_arg_re = Regex::new(r"\{\{(\d*)\}\}").unwrap();
+        Self { this, args, script_arg_re }
     }
 
-    fn get_replacement(&self, key: &SubKey<'_>) -> anyhow::Result<String> {
-        match key {
-            SubKey::All => {
-                Ok(std::env::args().collect::<Vec<String>>().join(" "))
-            }
-            SubKey::MatchArg(idx) => {
-                if *idx == 0 {
-                    Ok(self.this.to_string())
-                } else {
-                    self.args
-                        .get(idx - 1)
-                        .cloned()
-                        .context(format!("Invalid match argument index: {idx}"))
-                }
-            }
-            SubKey::Var(name) => self
-                .vars
-                .get(*name)
+    /// The entire evocation
+    fn evocation() -> String {
+        std::env::args().collect::<Vec<String>>().join(" ")
+    }
+
+    fn get_arg(&self, n: usize) -> anyhow::Result<String> {
+        if n == 0 {
+            // Just the fzfify evocation (no script_args)
+            Ok(self.this.to_owned())
+        } else {
+            // The `idx`-th script arg
+            self.args
+                .get(n - 1)
                 .cloned()
-                .context(format!("Undefined variable: {name}")),
+                .context(format!("Invalid script argument index: {n}"))
         }
     }
 
     /// Finds all substrings to be substituted and performs the matching sub
     fn do_sub(&self, s: &str) -> anyhow::Result<String> {
-        // Dont care about the cost of repeated cloning here
         let mut replaced = s.to_string();
-        // TODO: lots of duplication below?
 
-        while let Some(caps) = self.all_arg_re.captures(&replaced) {
-            let m = caps.get(0).unwrap();
-            let replacement = self.get_replacement(&SubKey::All)?;
-            debug!(
-                "Substituting evocation: {} <- {}",
-                &replaced[m.start()..m.end()],
-                &replacement
-            );
-            replaced.replace_range(m.start()..m.end(), &replacement);
-        }
-
-        while let Some(caps) = self.match_arg_re.captures(&replaced) {
+        while let Some(caps) = self.script_arg_re.captures(&replaced) {
             let m = caps.get(0).unwrap();
             let replacement = {
-                let idx = caps[1].parse().expect("Regex allows only ints");
-                self.get_replacement(&SubKey::MatchArg(idx))?
+                if caps[1].is_empty() {
+                    Self::evocation()
+                } else {
+                    let idx: usize =
+                        caps[1].parse().expect("Regex allows only ints");
+                    self.get_arg(idx)?
+                }
             };
             debug!(
-                "Substituting match argument: {} <- {}",
+                "Substituting script argument: {} <- {}",
                 &replaced[m.start()..m.end()],
                 &replacement
             );
-            replaced.replace_range(m.start()..m.end(), &replacement);
-        }
-
-        while let Some(caps) = self.var_re.captures(&replaced) {
-            let m = caps.get(0).unwrap();
-            let replacement = self.get_replacement(&SubKey::Var(&caps[1]))?;
-            debug!(
-                "Substituting variable: {} <- {}",
-                &replaced[m.start()..m.end()],
-                &replacement
-            );
+            // Dont care about the cost of repeated cloning here
             replaced.replace_range(m.start()..m.end(), &replacement);
         }
 
@@ -136,15 +91,10 @@ impl<'a> Substitutor<'a> {
 
 impl Action {
     /// Substitues in all the runtime information for this action
-    pub fn with_args_vars(
-        &self,
-        args: &[String],
-        vars: &HashMap<String, String>,
-    ) -> anyhow::Result<Self> {
+    pub fn with_args(&self, args: &[String]) -> anyhow::Result<Self> {
         let this = get_call_args(args);
-        let subber = Substitutor::new(&this, args, vars);
+        let subber = Substitutor::new(&this, args);
 
-        let match_args = self.match_args.clone();
         let input_cmd =
             subber.do_sub(&self.input_cmd).context("Error in input command")?;
         let show_binds = self.show_binds;
@@ -188,7 +138,6 @@ impl Action {
             .collect::<anyhow::Result<_>>()?;
 
         Ok(Self {
-            match_args,
             input_cmd,
             show_binds,
             preview,
