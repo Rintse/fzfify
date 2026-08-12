@@ -3,12 +3,12 @@
 mod descriptor;
 mod util;
 
-use crate::descriptor::Descriptor;
+use crate::descriptor::Action;
 use anyhow::Context;
 use clap::Parser;
 use log::LevelFilter;
-use std::{fs, path::PathBuf};
-use rhai::{Engine, EvalAltResult};
+use rhai::{Dynamic, Engine, Scope};
+use std::{collections::HashMap, fs, path::PathBuf};
 
 #[derive(Parser)]
 #[command(about, long_about = None)]
@@ -30,11 +30,27 @@ fn main() -> anyhow::Result<()> {
     env_logger::Builder::new().filter_level(log_level).init();
 
     let mut engine = Engine::new();
-    engine.register_type::<Descriptor>();
-    engine.register_fn("new_descriptor", Descriptor)
+    engine.register_fn("env", |name: &str| -> Dynamic {
+        match std::env::var(name) {
+            Ok(v) => v.into(),
+            Err(_) => Dynamic::UNIT,
+        }
+    });
+
+    let rhai_args: rhai::Array =
+        args.script_args.iter().cloned().map(Dynamic::from).collect();
+    let mut scope = Scope::new();
+    scope.push_constant("ARGS", rhai_args);
 
     let script = fs::read_to_string(&args.descriptor)?;
-    engine.run(&script).context("Error evaluating script")?;
+    let result: Dynamic = engine
+        .eval_with_scope(&mut scope, &script)
+        .context("Error evaluating script")?;
+
+    let action: Action = rhai::serde::from_dynamic(&result)
+        .context("Script did not return action")?;
+    let action = action.with_args_vars(&args.script_args, &HashMap::new())?;
+    action.run()
 
     // let toml_str = fs::read_to_string(&args.descriptor)?;
     // let cfg: Descriptor = toml::from_str(&toml_str)?;

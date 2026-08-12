@@ -1,5 +1,5 @@
 use crate::util::{get_call_args, input_stdout};
-use anyhow::{Context, anyhow};
+use anyhow::Context;
 use log::debug;
 use regex::Regex;
 use serde::Deserialize;
@@ -32,13 +32,6 @@ pub struct Action {
     pub binds: Vec<Bind>,
     #[serde(default)]
     pub extra_fzf_args: Vec<String>,
-}
-
-#[derive(Deserialize, Clone)]
-pub struct Descriptor {
-    pub actions: Vec<Action>,
-    #[serde(default)]
-    pub variables: HashMap<String, String>,
 }
 
 pub enum SubKey<'a> {
@@ -205,7 +198,7 @@ impl Action {
         })
     }
 
-    fn run(&self) -> anyhow::Result<()> {
+    pub fn run(&self) -> anyhow::Result<()> {
         let mut fzf_args: Vec<String> = vec![];
 
         let mut header_lines = self.header_lines.clone();
@@ -242,36 +235,5 @@ impl Action {
 
         fzf.wait()?;
         Ok(())
-    }
-}
-
-impl Descriptor {
-    pub fn run(&self, args: &[String]) -> anyhow::Result<()> {
-        let action: Option<&Action> = 'action_find: {
-            'action_for: for action in &self.actions {
-                if action.match_args.len() != args.len() {
-                    continue;
-                }
-
-                for (sa, ma) in args.iter().zip(&action.match_args) {
-                    let ma_re = Regex::new(ma)
-                        .context(format!("Invalid regex: {ma}"))?;
-                    if !ma_re.is_match(sa) {
-                        continue 'action_for;
-                    }
-                }
-                break 'action_find Some(action);
-            }
-
-            None
-        };
-
-        match action {
-            Some(action) => {
-                let action = action.with_args_vars(args, &self.variables)?;
-                action.run()
-            }
-            None => Err(anyhow!("No actions match provided args {args:?}")),
-        }
     }
 }
