@@ -1,33 +1,41 @@
-use crate::util::{get_call_args, input_stdout};
-use anyhow::Context;
+use crate::util::get_call_args;
+use anyhow::{Context, bail};
 use log::debug;
 use regex::Regex;
-use serde::Deserialize;
-use std::process::Stdio;
+use std::{
+    io::{BufRead, Write},
+    process::Stdio,
+};
 
 /// An fzf binding that also has a description to explain the binding
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct Bind {
     pub key: String,
     pub event: String,
     pub description: Option<String>,
 }
 
+impl Bind {
+    fn from_opt(data: &str) -> anyhow::Result<Self> {
+        let mut s = data.split('\x1f').skip(1);
+
+        let description = s.next().context("Missing description")?.to_string();
+        let key = s.next().context("Missing key")?.to_string();
+        let event = s.next().context("Missing event")?.to_string();
+
+        let description =
+            if description.is_empty() { None } else { Some(description) };
+        Ok(Self { key, event, description })
+    }
+}
+
 /// Specifies a the behaviour for an fzf view
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Clone)]
 pub struct Action {
-    /// The command to run as input to the fzf window
-    pub input_cmd: String,
-    /// Shows the keybinds for which a description is set if true
-    #[serde(default)]
     pub show_binds: bool,
-    // fzf arguments
     pub preview: Option<String>,
-    #[serde(default)]
     pub header_lines: Vec<String>,
-    #[serde(default)]
     pub binds: Vec<Bind>,
-    #[serde(default)]
     pub extra_fzf_args: Vec<String>,
 }
 
@@ -90,15 +98,66 @@ impl<'a> Substitutor<'a> {
 }
 
 impl Action {
+    pub fn from_option_data(data: &[u8]) -> anyhow::Result<Self> {
+        let mut preview: Option<String> = None;
+        let mut show_binds = false;
+        let mut binds: Vec<Bind> = Vec::new();
+        let mut header_lines: Vec<String> = Vec::new();
+        let mut fzf_args: Vec<String> = Vec::new();
+
+        let options: Vec<String> = data
+            .split(|x| x == &0x0)
+            .map(|x| String::from_utf8_lossy(x).to_string())
+            .collect();
+
+        for opt in options {
+            let mut s = opt.split('\x1f');
+
+            if let Some(opt_name) = s.next() {
+                match opt_name {
+                    "show_binds" => match s.next() {
+                        None => bail!("{opt_name} with no value"),
+                        Some("true") => show_binds = true,
+                        Some(_) => (),
+                    },
+                    "bind" => {
+                        let bind = Bind::from_opt(&opt)
+                            .context("Error parsing keybind")?;
+                        binds.push(bind);
+                    }
+                    "preview" => match s.next() {
+                        Some(cmd) => preview = Some(cmd.to_string()),
+                        None => bail!("{opt_name} with no value"),
+                    },
+                    "header" => match s.next() {
+                        Some(s) => header_lines.push(s.to_string()),
+                        None => bail!("{opt_name} with no value"),
+                    },
+                    "fzf_arg" => match s.next() {
+                        Some(s) => fzf_args.push(s.to_string()),
+                        None => bail!("{opt_name} with no value"),
+                    },
+                    "" => (),
+                    _ => bail!("Unknown option: {opt_name}"),
+                }
+            }
+        }
+
+        Ok(Self {
+            show_binds,
+            preview,
+            header_lines,
+            binds,
+            extra_fzf_args: fzf_args,
+        })
+    }
+
     /// Substitues in all the runtime information for this action
     pub fn with_args(&self, args: &[String]) -> anyhow::Result<Self> {
         let this = get_call_args(args);
         let subber = Substitutor::new(&this, args);
 
-        let input_cmd =
-            subber.do_sub(&self.input_cmd).context("Error in input command")?;
         let show_binds = self.show_binds;
-
         let preview = self.preview.clone().map(|p| subber.do_sub(&p));
         let preview = preview.transpose().context("Error in preview")?;
 
@@ -137,17 +196,10 @@ impl Action {
             })
             .collect::<anyhow::Result<_>>()?;
 
-        Ok(Self {
-            input_cmd,
-            show_binds,
-            preview,
-            header_lines,
-            binds,
-            extra_fzf_args,
-        })
+        Ok(Self { show_binds, preview, header_lines, binds, extra_fzf_args })
     }
 
-    pub fn run(&self) -> anyhow::Result<()> {
+    pub fn run(&self, mut reader: impl BufRead) -> anyhow::Result<()> {
         let mut fzf_args: Vec<String> = vec![];
 
         let mut header_lines = self.header_lines.clone();
@@ -179,8 +231,23 @@ impl Action {
 
         let mut fzf = std::process::Command::new("fzf")
             .args(fzf_args)
-            .stdin(Stdio::from(input_stdout(&self.input_cmd)?))
+            .stdin(Stdio::piped())
             .spawn()?;
+
+        let mut stdin =
+            fzf.stdin.take().context("Failed to take fzf's stdin")?;
+
+        // Pipe the rest of the reader into stdin
+        loop {
+            let data = reader.fill_buf()?;
+            let len = data.len();
+            if len == 0 {
+                break;
+            }
+
+            stdin.write_all(data)?;
+            reader.consume(len);
+        }
 
         fzf.wait()?;
         Ok(())
