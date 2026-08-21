@@ -4,7 +4,7 @@ SSH_DIR="$HOME/.ssh"
 PAHTPICKER="vifm --choose-dir -"
 
 set_keybind() {
-    echo -ne "\0bind\x1f${1}\x1f${2}\x1f${3}"
+    echo -ne "\x1ebind\x1f${1}\x1f${2}\x1f${3}"
 }
 
 
@@ -12,17 +12,16 @@ edit_ssh_cfg() {
     rg -l 'Host {1}' ~/.ssh | xargs \"$EDITOR\" '+/Host {r1}'
 }
 
+show_host_cfg="\
+shopt -s nullglob ; \
+sed -n '/^Host {1}\($\| \)/,/^Host \|^$/p' \
+$SSH_DIR/config $SSH_DIR/config.d/* \
+| sed '\$d' \
+"
+
 show_hosts() {
-    echo -ne "\0show_binds\x1ftrue"
-
-    preview_lines=(
-        'shopt -s nullglob;'
-        "sed -n '/^Host {1}\($\| \)/,/^Host \|^$/p'"
-        "$SSH_DIR/config $SSH_DIR/config.d/*" 
-        "| sed '\$d'"
-    )
-
-    echo -ne "\0preview\x1f${preview_lines[*]}"
+    echo -ne "\x1eshow_binds\x1ftrue"
+    echo -ne "\x1epreview\x1f$show_host_cfg"
 
     # set_keybind "Output host to stdout" \
     #     "ctrl-p" \
@@ -45,7 +44,8 @@ show_hosts() {
     #     "ctrl-space" \
     #     "become(bash <(echo 'ssh {1}' | vipe | tee /dev/tty))"
 
-    echo -ne "\x1e"
+    echo "printing sep" 1>&2
+    echo -ne "\x1d"
     grep -r "Host " ~/.ssh | grep -v "*" | cut -d " " -f 2
 }
 

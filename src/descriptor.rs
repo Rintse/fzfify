@@ -2,99 +2,37 @@ use crate::util::get_call_args;
 use anyhow::{Context, bail};
 use log::debug;
 use regex::Regex;
-use std::{
-    io::{BufRead, Write},
-    process::Stdio,
-};
+use std::{io::BufRead, process::Stdio};
 
-/// An fzf binding that also has a description to explain the binding
-#[derive(Debug, Clone)]
-pub struct Bind {
-    pub key: String,
-    pub event: String,
-    pub description: Option<String>,
-}
+/// This goes between the action and the actual data
+const ACTION_SEPARATOR: u8 = 0x1d; // ascii record separator
+/// This goes between each of `show_binds`, `preview`, etc.
+const OPTION_SEPARATOR: u8 = 0x1e; // ascii record separator
+/// This goes between the option name and each of its parameters
+const PARAM_SEPARATOR: u8 = 0x1f; // ascii unit separator
 
-impl Bind {
-    fn from_opt(data: &str) -> anyhow::Result<Self> {
-        let mut s = data.split('\x1f').skip(1);
+pub fn split_action(
+    mut reader: impl BufRead,
+) -> anyhow::Result<(Action, impl BufRead)> {
+    let mut options_buf = Vec::new();
+    let _ = reader.read_until(ACTION_SEPARATOR, &mut options_buf);
 
-        let description = s.next().context("Missing description")?.to_string();
-        let key = s.next().context("Missing key")?.to_string();
-        let event = s.next().context("Missing event")?.to_string();
-
-        let description =
-            if description.is_empty() { None } else { Some(description) };
-        Ok(Self { key, event, description })
+    if options_buf.last() != Some(&ACTION_SEPARATOR) {
+        bail!("Did not find an action separator '{ACTION_SEPARATOR:#04x}'")
     }
+
+    let action = Action::from_option_data(&options_buf)?;
+    Ok((action, reader))
 }
 
 /// Specifies a the behaviour for an fzf view
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Action {
     pub show_binds: bool,
     pub preview: Option<String>,
     pub header_lines: Vec<String>,
     pub binds: Vec<Bind>,
     pub extra_fzf_args: Vec<String>,
-}
-
-pub struct Substitutor<'a> {
-    this: &'a str,
-    args: &'a [String],
-    script_arg_re: Regex,
-}
-
-impl<'a> Substitutor<'a> {
-    fn new(this: &'a str, args: &'a [String]) -> Self {
-        let script_arg_re = Regex::new(r"\{\{(\d*)\}\}").unwrap();
-        Self { this, args, script_arg_re }
-    }
-
-    /// The entire evocation
-    fn evocation() -> String {
-        std::env::args().collect::<Vec<String>>().join(" ")
-    }
-
-    fn get_arg(&self, n: usize) -> anyhow::Result<String> {
-        if n == 0 {
-            // Just the fzfify evocation (no script_args)
-            Ok(self.this.to_owned())
-        } else {
-            // The `idx`-th script arg
-            self.args
-                .get(n - 1)
-                .cloned()
-                .context(format!("Invalid script argument index: {n}"))
-        }
-    }
-
-    /// Finds all substrings to be substituted and performs the matching sub
-    fn do_sub(&self, s: &str) -> anyhow::Result<String> {
-        let mut replaced = s.to_string();
-
-        while let Some(caps) = self.script_arg_re.captures(&replaced) {
-            let m = caps.get(0).unwrap();
-            let replacement = {
-                if caps[1].is_empty() {
-                    Self::evocation()
-                } else {
-                    let idx: usize =
-                        caps[1].parse().expect("Regex allows only ints");
-                    self.get_arg(idx)?
-                }
-            };
-            debug!(
-                "Substituting script argument: {} <- {}",
-                &replaced[m.start()..m.end()],
-                &replacement
-            );
-            // Dont care about the cost of repeated cloning here
-            replaced.replace_range(m.start()..m.end(), &replacement);
-        }
-
-        Ok(replaced)
-    }
 }
 
 impl Action {
@@ -106,12 +44,12 @@ impl Action {
         let mut fzf_args: Vec<String> = Vec::new();
 
         let options: Vec<String> = data
-            .split(|x| x == &0x0)
+            .split(|x| *x == OPTION_SEPARATOR)
             .map(|x| String::from_utf8_lossy(x).to_string())
             .collect();
 
         for opt in options {
-            let mut s = opt.split('\x1f');
+            let mut s = opt.split(PARAM_SEPARATOR as char);
 
             if let Some(opt_name) = s.next() {
                 match opt_name {
@@ -137,7 +75,7 @@ impl Action {
                         Some(s) => fzf_args.push(s.to_string()),
                         None => bail!("{opt_name} with no value"),
                     },
-                    "" => (),
+                    "" => (), // this allows starting with OPTION_SEPARATOR
                     _ => bail!("Unknown option: {opt_name}"),
                 }
             }
@@ -199,10 +137,10 @@ impl Action {
         Ok(Self { show_binds, preview, header_lines, binds, extra_fzf_args })
     }
 
-    pub fn run(&self, mut reader: impl BufRead) -> anyhow::Result<()> {
-        let mut fzf_args: Vec<String> = vec![];
-
+    fn fzf_args(&self) -> Vec<String> {
+        let mut args: Vec<String> = vec![];
         let mut header_lines = self.header_lines.clone();
+
         if self.show_binds {
             for Bind { key, description, .. } in &self.binds {
                 if let Some(desc) = description {
@@ -212,44 +150,121 @@ impl Action {
         }
 
         if !header_lines.is_empty() {
-            fzf_args.push("--header".to_string());
-            fzf_args.push(header_lines.join("\n"));
+            args.push("--header".to_string());
+            args.push(header_lines.join("\n"));
         }
 
         if let Some(cmd) = &self.preview {
-            fzf_args.push("--preview".to_string());
-            fzf_args.push(cmd.clone());
+            args.push("--preview".to_string());
+            args.push(cmd.clone());
         }
 
         for Bind { key, event, .. } in &self.binds {
-            fzf_args.push("--bind".to_string());
-            fzf_args.push(format!("{key}:{event}"));
+            args.push("--bind".to_string());
+            args.push(format!("{key}:{event}"));
         }
 
-        fzf_args.extend_from_slice(&self.extra_fzf_args);
+        args.extend_from_slice(&self.extra_fzf_args);
+        args
+    }
+
+    pub fn run(&self, mut reader: impl BufRead) -> anyhow::Result<()> {
+        let fzf_args = self.fzf_args();
         debug!("Passing to fzf:\n{}", fzf_args.join("\n"));
 
         let mut fzf = std::process::Command::new("fzf")
             .args(fzf_args)
             .stdin(Stdio::piped())
             .spawn()?;
-
         let mut stdin =
             fzf.stdin.take().context("Failed to take fzf's stdin")?;
 
         // Pipe the rest of the reader into stdin
-        loop {
-            let data = reader.fill_buf()?;
-            let len = data.len();
-            if len == 0 {
-                break;
-            }
+        let _ = std::io::copy(&mut reader, &mut stdin);
+        drop(stdin);
+        fzf.wait()?;
 
-            stdin.write_all(data)?;
-            reader.consume(len);
+        Ok(())
+    }
+}
+
+/// An fzf binding that also has a description to explain the binding
+#[derive(Debug, Clone)]
+pub struct Bind {
+    pub key: String,
+    pub event: String,
+    pub description: Option<String>,
+}
+
+impl Bind {
+    fn from_opt(data: &str) -> anyhow::Result<Self> {
+        let mut s = data.split(PARAM_SEPARATOR as char).skip(1);
+
+        let description = s.next().context("Missing description")?.to_string();
+        let key = s.next().context("Missing key")?.to_string();
+        let event = s.next().context("Missing event")?.to_string();
+
+        let description =
+            if description.is_empty() { None } else { Some(description) };
+        Ok(Self { key, event, description })
+    }
+}
+
+pub struct Substitutor<'a> {
+    this: &'a str,
+    args: &'a [String],
+    script_arg_re: Regex,
+}
+
+/// Utility struct that performs transformations based on evocation details
+impl<'a> Substitutor<'a> {
+    fn new(this: &'a str, args: &'a [String]) -> Self {
+        let script_arg_re = Regex::new(r"\{\{(\d*)\}\}").unwrap();
+        Self { this, args, script_arg_re }
+    }
+
+    /// The entire evocation of this program
+    fn evocation() -> String {
+        std::env::args().collect::<Vec<String>>().join(" ")
+    }
+
+    fn get_arg(&self, n: usize) -> anyhow::Result<String> {
+        if n == 0 {
+            // Just the fzfify evocation (no script_args)
+            Ok(self.this.to_owned())
+        } else {
+            // The `idx`-th script arg
+            self.args
+                .get(n - 1)
+                .cloned()
+                .context(format!("Invalid script argument index: {n}"))
+        }
+    }
+
+    /// Finds all substrings to be substituted and performs the matching sub
+    fn do_sub(&self, s: &str) -> anyhow::Result<String> {
+        let mut replaced = s.to_string();
+
+        while let Some(caps) = self.script_arg_re.captures(&replaced) {
+            let m = caps.get(0).unwrap();
+            let replacement = {
+                if caps[1].is_empty() {
+                    Self::evocation()
+                } else {
+                    let idx: usize =
+                        caps[1].parse().expect("Regex allows only ints");
+                    self.get_arg(idx)?
+                }
+            };
+            debug!(
+                "Substituting script argument: {} <- {}",
+                &replaced[m.start()..m.end()],
+                &replacement
+            );
+            // Dont care about the cost of repeated cloning here
+            replaced.replace_range(m.start()..m.end(), &replacement);
         }
 
-        fzf.wait()?;
-        Ok(())
+        Ok(replaced)
     }
 }
