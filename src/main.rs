@@ -14,11 +14,9 @@ struct CliArgs {
     /// Enable verbose mode
     #[arg(short, long)]
     verbose: bool,
-    /// The rhai script specifying fzf behaviour
-    script: String,
     /// The arguments passed as `ARGS` to the script
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    script_args: Vec<String>,
+    script: Vec<String>,
 }
 
 impl CliArgs {
@@ -35,6 +33,6 @@ fn main() -> anyhow::Result<()> {
     let (action, reader) = split_action(BufReader::new(stdout))?;
     debug!("Parsed action:\n{action:?}");
 
-    let action = action.with_args(&args.script_args)?;
+    let action = action.with_args(&args.script[1..])?;
     action.run(reader)
 }

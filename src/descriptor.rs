@@ -17,7 +17,7 @@ pub fn split_action(
     let mut options_buf = Vec::new();
     let _ = reader.read_until(ACTION_SEPARATOR, &mut options_buf);
 
-    if options_buf.last() != Some(&ACTION_SEPARATOR) {
+    if options_buf.pop() != Some(ACTION_SEPARATOR) {
         bail!("Did not find an action separator '{ACTION_SEPARATOR:#04x}'")
     }
 
@@ -92,8 +92,7 @@ impl Action {
 
     /// Substitues in all the runtime information for this action
     pub fn with_args(&self, args: &[String]) -> anyhow::Result<Self> {
-        let this = get_call_args(args);
-        let subber = Substitutor::new(&this, args);
+        let subber = Substitutor::new(args);
 
         let show_binds = self.show_binds;
         let preview = self.preview.clone().map(|p| subber.do_sub(&p));
@@ -211,14 +210,15 @@ impl Bind {
 }
 
 pub struct Substitutor<'a> {
-    this: &'a str,
+    this: String,
     args: &'a [String],
     script_arg_re: Regex,
 }
 
 /// Utility struct that performs transformations based on evocation details
 impl<'a> Substitutor<'a> {
-    fn new(this: &'a str, args: &'a [String]) -> Self {
+    fn new(args: &'a [String]) -> Self {
+        let this = get_call_args(args);
         let script_arg_re = Regex::new(r"\{\{(\d*)\}\}").unwrap();
         Self { this, args, script_arg_re }
     }
@@ -231,7 +231,7 @@ impl<'a> Substitutor<'a> {
     fn get_arg(&self, n: usize) -> anyhow::Result<String> {
         if n == 0 {
             // Just the fzfify evocation (no script_args)
-            Ok(self.this.to_owned())
+            Ok(self.this.clone())
         } else {
             // The `idx`-th script arg
             self.args
@@ -259,7 +259,7 @@ impl<'a> Substitutor<'a> {
             debug!(
                 "Substituting script argument: {} <- {}",
                 &replaced[m.start()..m.end()],
-                &replacement
+                replacement
             );
             // Dont care about the cost of repeated cloning here
             replaced.replace_range(m.start()..m.end(), &replacement);

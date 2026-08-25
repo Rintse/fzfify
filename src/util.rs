@@ -3,7 +3,7 @@ use std::process::Stdio;
 use anyhow::Context;
 use log::debug;
 
-/// Reconstructs the invocation of this program, excluding `script_args`
+/// Reconstructs the invocation of this program, excluding `script`
 pub fn get_call_args(script_args: &[String]) -> String {
     let mut args: Vec<String> = std::env::args().collect();
     let keep = args.len().saturating_sub(script_args.len());
@@ -19,14 +19,16 @@ pub fn get_call_args(script_args: &[String]) -> String {
 }
 
 /// Launches input command and returns a handle to its stdout
-pub fn start_script(cmd: &str) -> anyhow::Result<std::process::ChildStdout> {
-    debug!("Launching input cmd: {cmd}");
+pub fn start_script(cmd: &[String]) -> anyhow::Result<std::process::ChildStdout> {
+    debug!("Launching input cmd: {cmd:?}");
     let shell =
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-    let mut cmd = std::process::Command::new(shell)
+    let cmd = cmd.join(" ");
+
+    let mut p = std::process::Command::new(shell)
         .arg("-c")
         .arg(cmd)
         .stdout(Stdio::piped())
         .spawn()?;
-    cmd.stdout.take().context("Failed to take stdout of input command")
+    p.stdout.take().context("Failed to take stdout of input command")
 }
