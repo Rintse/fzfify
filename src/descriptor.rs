@@ -219,7 +219,20 @@ pub struct Substitutor<'a> {
 impl<'a> Substitutor<'a> {
     fn new(args: &'a [String]) -> Self {
         let this = get_call_args(args);
-        let script_arg_re = Regex::new(r"\{\{(\d*|\*)\}\}").unwrap();
+        let script_arg_re = Regex::new(
+            r"(?x)
+            \{\{
+                (?:
+                    (?P<star_except>\*-\d+)
+                  | (?P<star>\*)
+                  | (?P<list>\d+(?:,\d+)+)
+                  | (?P<range>\d*-\d*)
+                  | (?P<index>\d*)
+                )
+            \}\}
+        ",
+        )
+        .unwrap();
         Self { this, args, script_arg_re }
     }
 
@@ -247,17 +260,46 @@ impl<'a> Substitutor<'a> {
 
         while let Some(caps) = self.script_arg_re.captures(&replaced) {
             let m = caps.get(0).unwrap();
-            let replacement = {
-                if caps[1].is_empty() {
+
+            // {{*-n}}: Get all arguments after the fzfify invocation itself,
+            // except the final n.
+            let replacement = if let Some(n) = caps.name("star_except") {
+                let count = &n.as_str()[2..];
+                let n: usize = count
+                    .parse()
+                    .context(format!("Failed to parse {count} as an index"))?;
+                self.args[..(self.args.len().saturating_sub(n))].join(" ")
+            }
+            // {{*}}: Get all arguments after the fzfify invocation itself
+            else if caps.name("star").is_some() {
+                self.args.join(" ")
+            }
+            // {{x,y,z}}: Get each index and concatenate
+            else if let Some(l) = caps.name("list") {
+                l.as_str()
+                    .split(',')
+                    .map(|i| i.parse().expect("regex"))
+                    .map(|i| self.get_arg(i))
+                    .collect::<anyhow::Result<Vec<_>>>()?
+                    .join(" ")
+            }
+            // {{x-y}}: Get x..y and concatenate
+            else if let Some(r) = caps.name("range") {
+                let (start, end) = r.as_str().split_once('-').expect("regex");
+                let start = if start.is_empty() { 1 } else { start.parse()? };
+                let end = if end.is_empty() { 1 } else { end.parse()? };
+                self.args[start..end].join(" ")
+            } else if let Some(l) = caps.name("index") {
+                // {{}}: Get the entire invocation
+                if l.is_empty() {
                     Self::evocation()
-                } else if &caps[1] == "*" {
-                    self.args.join(" ")
                 }
+                // {{n}}: Get the nth argument, 0 is just the fzfify part
                 else {
-                    let idx: usize =
-                        caps[1].parse().expect("Regex allows only ints");
-                    self.get_arg(idx)?
+                    self.get_arg(l.as_str().parse()?)?
                 }
+            } else {
+                unreachable!("script_arg_re must be one of the above")
             };
             debug!(
                 "Substituting script argument: {} <- {}",

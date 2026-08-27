@@ -37,36 +37,49 @@ set_default() {
 }
 
 show_list() {
-    [[ "$1" == "source" ]] && other="sink" || other="source"
+    # This is annoying because we allow no argument to mean 'sinks'
+    obj="sources"
+    if [[ -z "$1" ]]; then
+        obj="sink"
+        other="source"
+        other_cmd="{{}} sources"
+    elif [[ "$1" == "sinks" ]]; then
+        obj="sink"
+        other="source"
+        other_cmd="{{0}} {{*-1}} sources"
+    else
+        obj="source"
+        other="sink"
+    fi
 
     echo -ne "\x1eshow_binds\x1ftrue"
-    echo -ne "\x1epreview\x1f{{*}} preview $1 {1}"
+    echo -ne "\x1epreview\x1f{{*}} preview $obj {1}"
     set_keybind "Volume down" \
         "ctrl-j" \
-        "execute-silent({{*}} vol $1 {1} -5%)+refresh-preview"
+        "execute-silent({{*}} vol $obj {1} -5%)+refresh-preview"
     set_keybind "Volume up" \
         "ctrl-k" \
-        "execute-silent({{*}} vol $1 {1} +5%)+refresh-preview"
+        "execute-silent({{*}} vol $obj {1} +5%)+refresh-preview"
     set_keybind "Mute" \
         "ctrl-m" \
-        "execute-silent({{*}} mute $1 {1})+refresh-preview"
+        "execute-silent({{*}} mute $obj {1})+refresh-preview"
     set_keybind "Set default" \
         "ctrl-d" \
-        "execute-silent({{*}} setdef $1 {1})+become({{}})"
+        "execute-silent({{*}} setdef $obj {1})+become({{}})"
     set_keybind "Show full details" \
         "ctrl-o" \
-        "execute({{*}} details $1 {1})"
+        "execute({{*}} details $obj {1})"
     set_keybind "Switch to ${other}s" \
         "ctrl-s" \
-        "become({{0}} bash $(readlink -f -- "$0") ${other}s)"
+        "become($other_cmd)"
     echo -ne "\x1d"
 
-    list_items "$1"
+    list_items "$obj"
 }
 
 case "$1" in
 "" | sinks)
-    show_list sink
+    show_list "$2"
     ;;
 sources)
     show_list source
