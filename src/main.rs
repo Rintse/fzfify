@@ -31,7 +31,7 @@ fn main() -> anyhow::Result<()> {
 
     let stdout = start_script(&args.script)?;
     let (action, reader) = split_action(BufReader::new(stdout))?;
-    debug!("Parsed action:\n{action:?}");
+    debug!("Parsed action:\n{action:#?}");
 
     let action = action.with_args(&args.script)?;
     action.run(reader)
