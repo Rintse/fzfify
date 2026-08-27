@@ -58,7 +58,7 @@ show_list() {
         "execute({{*}} details $1 {1})"
     set_keybind "Switch to ${other}s" \
         "ctrl-s" \
-        "become({{0}} ${other}s)"
+        "become({{0}} bash $(readlink -f -- "$0") ${other}s)"
     echo -ne "\x1d"
 
     list_items "$1"
