@@ -219,7 +219,7 @@ pub struct Substitutor<'a> {
 impl<'a> Substitutor<'a> {
     fn new(args: &'a [String]) -> Self {
         let this = get_call_args(args);
-        let script_arg_re = Regex::new(r"\{\{(\d*)\}\}").unwrap();
+        let script_arg_re = Regex::new(r"\{\{(\d*|\*)\}\}").unwrap();
         Self { this, args, script_arg_re }
     }
 
@@ -250,7 +250,10 @@ impl<'a> Substitutor<'a> {
             let replacement = {
                 if caps[1].is_empty() {
                     Self::evocation()
-                } else {
+                } else if &caps[1] == "*" {
+                    self.args.join(" ")
+                }
+                else {
                     let idx: usize =
                         caps[1].parse().expect("Regex allows only ints");
                     self.get_arg(idx)?

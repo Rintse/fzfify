@@ -3,7 +3,7 @@ use std::process::Stdio;
 use anyhow::Context;
 use log::debug;
 
-/// Reconstructs the invocation of this program, excluding `script`
+/// Reconstructs the invocation of this program
 pub fn get_call_args(script_args: &[String]) -> String {
     let mut args: Vec<String> = std::env::args().collect();
     let keep = args.len().saturating_sub(script_args.len());
