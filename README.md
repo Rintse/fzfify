@@ -16,7 +16,7 @@ cargo install --path .
 ## Usage
 
 ```
-fzfify SCRIPT [SCRIPT_ARGS]...
+fzfify [OPTIONS] [SCRIPT]...
 ```
 
 ## Example scripts

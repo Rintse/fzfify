@@ -1,8 +1,7 @@
 # Dependencies: pactl, jq
 
-set_keybind() {
-    echo -ne "\x1ebind\x1f${1}\x1f${2}\x1f${3}"
-}
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+source "$SCRIPT_DIR/util.sh"
 
 list_items() {
     default=$(pactl "get-default-$1")
@@ -52,8 +51,8 @@ show_list() {
         other_cmd="{{0}} {{*-1}} ${other}s"
     fi
 
-    echo -ne "\x1eshow_binds\x1ftrue"
-    echo -ne "\x1epreview\x1f{{*}} preview $obj {1}"
+    set_show_binds
+    set_preview "{{*}} preview $obj {1}"
     set_keybind "Volume down" \
         "ctrl-j" \
         "execute-silent({{*}} vol $obj {1} -5%)+refresh-preview"
@@ -72,7 +71,7 @@ show_list() {
     set_keybind "Switch to ${other}s" \
         "ctrl-s" \
         "become($other_cmd)"
-    echo -ne "\x1d"
+    options_end
 
     list_items "$obj"
 }

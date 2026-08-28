@@ -1,24 +1,27 @@
 #!/bin/env bash
 
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+source "$SCRIPT_DIR/util.sh"
+
 SSH_DIR="$HOME/.ssh"
 PAHTPICKER="vifm --choose-dir -"
 
-set_keybind() {
-    echo -ne "\x1ebind\x1f${1}\x1f${2}\x1f${3}"
-}
 edit_ssh_cfg() {
     rg -l "Host $1" ~/.ssh | xargs "$EDITOR" "+/Host $1"
 }
+
 edit_ssh_cmd() {
     cmd=$(echo "ssh $1" | vipe | tee /dev/tty)
     eval "$cmd"
 }
+
 show_host_cfg() {
     shopt -s nullglob
     sed -n "/^Host $1\($\| \)/,/^Host \|^$/p" \
         "$SSH_DIR/config" "$SSH_DIR"/config.d/* |
         sed '$d'
 }
+
 copy_from() {
     if [[ -z "$2" ]]; then
         # Pick file on remote
@@ -36,9 +39,10 @@ copy_from() {
         scp -r "$1:$2" "$save_path/$(basename "$2")"
     fi
 }
+
 show_hosts() {
-    echo -ne "\x1eshow_binds\x1ftrue"
-    echo -ne "\x1epreview\x1f{{*}} preview_host {}"
+    set_show_binds
+    set_preview "{{*}} preview_host {}"
     set_keybind "Edit SSH host config" \
         "ctrl-e" \
         "execute({{*}} edit_host {})"
@@ -54,7 +58,7 @@ show_hosts() {
     set_keybind "SSH into host after editing ssh command" \
         "ctrl-space" \
         "become({{*}} edit_cmd {})"
-    echo -ne "\x1d"
+    options_end
 
     grep -r "Host " ~/.ssh | grep -v '*' | cut -d " " -f 2
 }
