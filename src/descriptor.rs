@@ -236,7 +236,6 @@ impl<'a> Substitutor<'a> {
         Self { this, args, script_arg_re }
     }
 
-    /// The entire evocation of this program
     fn evocation() -> String {
         std::env::args().collect::<Vec<String>>().join(" ")
     }

@@ -23,7 +23,7 @@ copy_from() {
     if [[ -z "$2" ]]; then
         # Pick file on remote
         echo -ne "\x1eshow_binds\x1ftrue"
-        echo -ne "\x1epreview\x1fssh {{2}} stat {}"
+        echo -ne "\x1epreview\x1fssh $1 stat {}"
         set_keybind "Copy file to local host" \
             "enter" \
             "become({{*}} {})"

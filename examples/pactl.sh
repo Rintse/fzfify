@@ -37,19 +37,19 @@ set_default() {
 }
 
 show_list() {
-    # This is annoying because we allow no argument to mean 'sinks'
-    obj="sources"
-    if [[ -z "$1" ]]; then
-        obj="sink"
-        other="source"
-        other_cmd="{{}} sources"
-    elif [[ "$1" == "sinks" ]]; then
-        obj="sink"
-        other="source"
-        other_cmd="{{0}} {{*-1}} sources"
-    else
+    if [[ "$1" == "source" ]]; then
         obj="source"
         other="sink"
+    else
+        obj="sink"
+        other="source"
+    fi
+
+    # This is annoying because we allow no argument to mean 'sinks'
+    if [[ -z "$1" ]]; then
+        other_cmd="{{}} sources"
+    else
+        other_cmd="{{0}} {{*-1}} ${other}s"
     fi
 
     echo -ne "\x1eshow_binds\x1ftrue"
@@ -79,27 +79,19 @@ show_list() {
 
 case "$1" in
 "" | sinks)
-    show_list "$2"
-    ;;
+    show_list "$1" ;;
 sources)
-    show_list source
-    ;;
+    show_list source ;;
 preview)
-    preview_item "$2" "$3"
-    ;;
+    preview_item "$2" "$3" ;;
 vol)
-    change_volume "$2" "$3" "$4"
-    ;;
+    change_volume "$2" "$3" "$4" ;;
 mute)
-    toggle_mute "$2" "$3"
-    ;;
+    toggle_mute "$2" "$3" ;;
 setdef)
-    set_default "$2" "$3"
-    ;;
+    set_default "$2" "$3" ;;
 details)
-    show_details "$2" "$3"
-    ;;
+    show_details "$2" "$3" ;;
 *)
-    echo "wat"
-    ;;
+    echo "wat" ;;
 esac
