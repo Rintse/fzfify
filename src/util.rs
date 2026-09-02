@@ -19,7 +19,9 @@ pub fn get_call_args(script_args: &[String]) -> String {
 }
 
 /// Launches input command and returns a handle to its stdout
-pub fn start_script(cmd: &[String]) -> anyhow::Result<std::process::ChildStdout> {
+pub fn start_script(
+    cmd: &[String],
+) -> anyhow::Result<std::process::ChildStdout> {
     debug!("Launching input cmd: {cmd:?}");
     let shell =
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
@@ -30,5 +32,6 @@ pub fn start_script(cmd: &[String]) -> anyhow::Result<std::process::ChildStdout>
         .arg(cmd)
         .stdout(Stdio::piped())
         .spawn()?;
+
     p.stdout.take().context("Failed to take stdout of input command")
 }

@@ -288,13 +288,13 @@ impl<'a> Substitutor<'a> {
                 let start = if start.is_empty() { 1 } else { start.parse()? };
                 let end = if end.is_empty() { 1 } else { end.parse()? };
                 self.args[start..end].join(" ")
-            } else if let Some(l) = caps.name("index") {
+            }
+            // {{n}}: Get the nth argument, 0 is just the fzfify part
+            else if let Some(l) = caps.name("index") {
                 // {{}}: Get the entire invocation
                 if l.is_empty() {
                     Self::evocation()
-                }
-                // {{n}}: Get the nth argument, 0 is just the fzfify part
-                else {
+                } else {
                     self.get_arg(l.as_str().parse()?)?
                 }
             } else {

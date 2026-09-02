@@ -46,13 +46,15 @@ show_list() {
 
     # This is annoying because we allow no argument to mean 'sinks'
     if [[ -z "$1" ]]; then
+        script="{{*}}"
         other_cmd="{{}} sources"
     else
+        script="{{*-1}}"
         other_cmd="{{0}} {{*-1}} ${other}s"
     fi
 
     set_show_binds
-    set_preview "{{*}} preview $obj {1}"
+    set_preview "$script preview $obj {1}"
     set_keybind "Volume down" \
         "ctrl-j" \
         "execute-silent({{*}} vol $obj {1} -5%)+refresh-preview"
