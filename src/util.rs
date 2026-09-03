@@ -1,4 +1,4 @@
-use std::process::Stdio;
+use std::{path::Path, process::Stdio};
 
 use anyhow::Context;
 use log::debug;
@@ -18,6 +18,20 @@ pub fn get_call_args(script_args: &[String]) -> String {
     args.join(" ")
 }
 
+/// Required to pass a file in the pwd as a single argument without `./`
+fn resolve_if_cwd_file(cmd: &[String]) -> Vec<String> {
+    let mut cmd = cmd.to_vec();
+
+    if let Some(f) = cmd.first_mut()
+        && !f.contains('/')
+        && Path::new(f).is_file()
+    {
+        *f = format!("./{f}");
+    }
+
+    cmd
+}
+
 /// Launches input command and returns a handle to its stdout
 pub fn start_script(
     cmd: &[String],
@@ -25,7 +39,7 @@ pub fn start_script(
     debug!("Launching input cmd: {cmd:?}");
     let shell =
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string());
-    let cmd = cmd.join(" ");
+    let cmd = resolve_if_cwd_file(cmd).join(" ");
 
     let mut p = std::process::Command::new(shell)
         .arg("-c")

@@ -286,7 +286,11 @@ impl<'a> Substitutor<'a> {
             else if let Some(r) = caps.name("range") {
                 let (start, end) = r.as_str().split_once('-').expect("regex");
                 let start = if start.is_empty() { 1 } else { start.parse()? };
-                let end = if end.is_empty() { 1 } else { end.parse()? };
+                let end = if end.is_empty() {
+                    self.args.len() - 1
+                } else {
+                    end.parse()?
+                };
                 self.args[start..end].join(" ")
             }
             // {{n}}: Get the nth argument, 0 is just the fzfify part
@@ -300,6 +304,7 @@ impl<'a> Substitutor<'a> {
             } else {
                 unreachable!("script_arg_re must be one of the above")
             };
+
             debug!(
                 "Substituting script argument: {} <- {}",
                 &replaced[m.start()..m.end()],
