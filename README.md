@@ -40,6 +40,9 @@ bytes. The following options are available:
   binding, showing the key and description fields.
 - **`extra_fzf_args`**: Passed to fzf as-is.
 
+See [`examples/util.sh`](examples/util.sh) for examples of how to pass these
+options.
+
 ## Argument templating
 
 All of:
