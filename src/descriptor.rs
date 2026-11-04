@@ -32,6 +32,7 @@ pub struct Action {
     pub preview: Option<String>,
     pub header_lines: Vec<String>,
     pub binds: Vec<Bind>,
+    pub env_data: Vec<String>,
     pub extra_fzf_args: Vec<String>,
 }
 
@@ -41,6 +42,7 @@ impl Action {
         let mut show_binds = false;
         let mut binds: Vec<Bind> = Vec::new();
         let mut header_lines: Vec<String> = Vec::new();
+        let mut env_data: Vec<String> = Vec::new();
         let mut fzf_args: Vec<String> = Vec::new();
 
         let options: Vec<String> = data
@@ -71,6 +73,10 @@ impl Action {
                         Some(s) => header_lines.push(s.to_string()),
                         None => bail!("{opt_name} with no value"),
                     },
+                    "env_data" => match s.next() {
+                        Some(s) => env_data.push(s.to_string()),
+                        None => bail!("{opt_name} with no value"),
+                    },
                     "fzf_arg" => match s.next() {
                         Some(s) => fzf_args.push(s.to_string()),
                         None => bail!("{opt_name} with no value"),
@@ -86,6 +92,7 @@ impl Action {
             preview,
             header_lines,
             binds,
+            env_data,
             extra_fzf_args: fzf_args,
         })
     }
@@ -95,6 +102,7 @@ impl Action {
         let subber = Substitutor::new(args);
 
         let show_binds = self.show_binds;
+        let env_data = self.env_data.clone();
         let preview = self.preview.clone().map(|p| subber.do_sub(&p));
         let preview = preview.transpose().context("Error in preview")?;
 
@@ -133,7 +141,14 @@ impl Action {
             })
             .collect::<anyhow::Result<_>>()?;
 
-        Ok(Self { show_binds, preview, header_lines, binds, extra_fzf_args })
+        Ok(Self {
+            show_binds,
+            preview,
+            header_lines,
+            binds,
+            env_data,
+            extra_fzf_args,
+        })
     }
 
     fn fzf_args(&self) -> Vec<String> {
@@ -172,8 +187,9 @@ impl Action {
         debug!("Passing to fzf:\n{}", fzf_args.join("\n"));
 
         let mut fzf = std::process::Command::new("fzf")
-            .args(fzf_args)
+            .env("FZFIFY_DATA", self.env_data.join("\0"))
             .stdin(Stdio::piped())
+            .args(fzf_args)
             .spawn()?;
         let mut stdin =
             fzf.stdin.take().context("Failed to take fzf's stdin")?;

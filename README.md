@@ -38,6 +38,8 @@ bytes. The following options are available:
     - **`event`**
 - **`show_binds`**: If true, additional header lines are added for each
   binding, showing the key and description fields.
+- **`env_data`**: Passed to the next iteration of fzf as null separated strings
+  in the `FZFIFY_DATA` environment variable.
 - **`extra_fzf_args`**: Passed to fzf as-is.
 
 See [`examples/util.sh`](examples/util.sh) for examples of how to pass these
